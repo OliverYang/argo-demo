@@ -340,6 +340,7 @@ argocd app wait argo-demo-dev --health --insecure     # 阻塞直到 Healthy
 | **`ImagePullPolicy: IfNotPresent`** | 本地 kind，手动加载过镜像 | 生产用 `Always`（配合不可变 tag） |
 | **namespace 靠 `CreateNamespace=true`** | 图省事 | 单独管理，配合 ResourceQuota / LimitRange / NetworkPolicy |
 | **测试覆盖率 / lint** | 只有 4 个测试 | ESLint、类型检查、覆盖率阈值门禁 |
+| **CI 的 paths 过滤** | 只改文档也会构建一个镜像 | `on.push.paths` 排除 `**.md`；或把 docs 拆成单独 workflow。实测：本次文档提交 72528fb 就触发了一次完整构建 + 一次 dev bump，镜像内容跟上一版其实没差别 |
 | **GHCR 私有性** | 仓库是 **public** 的 | 注意：`ghcr.io/oliveryang/argo-demo-app` 任何人可拉取。学习够用，别放公司代码 |
 
 ### 关于 Argo CD 与 Argo Rollouts
