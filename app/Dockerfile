@@ -14,6 +14,11 @@ RUN mkdir -p node_modules && npm install --omit=dev
 FROM node:22-alpine AS runtime
 WORKDIR /app
 
+# The version is baked in at BUILD time from the git SHA, not injected by the
+# manifest. That way the running app can never disagree with its image tag:
+# the identity of the artifact is fixed when the artifact is made.
+ARG APP_VERSION=dev
+
 # Run as a non-root user. K8s pods run as root by default, which is a
 # well-known privilege escalation vector.
 RUN addgroup -S app && adduser -S app -G app
@@ -23,10 +28,11 @@ RUN chown -R app:app /app
 USER app
 
 ENV NODE_ENV=production \
-    PORT=8080
+    PORT=8080 \
+    APP_VERSION=${APP_VERSION}
 
 EXPOSE 8080
 
-# The image stays environment-agnostic: version and env name are injected
-# at deploy time via the Deployment env, not baked in here.
+# The image stays environment-agnostic: only the ENVIRONMENT name is
+# injected at deploy time via the Deployment env.
 CMD ["node", "server.js"]

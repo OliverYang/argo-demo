@@ -112,6 +112,8 @@ jobs:
             ${{ steps.img.outputs.image }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            APP_VERSION=${{ steps.meta.outputs.tag }}
           # arm64 so Apple Silicon laptops can run it, amd64 so the
           # GitHub-hosted runners and most clusters can.
           platforms: linux/amd64,linux/arm64
