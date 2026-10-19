@@ -1,0 +1,189 @@
+name: CI
+
+# Why these triggers:
+# - push to main  -> build + push image + bump the dev overlay
+# - pull_request  -> test only, never publish (fork PRs must not get secrets)
+# - manual        -> lets you re-run a release or promote to prod
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      promote:
+        description: 'Also promote the built image to the prod overlay'
+        type: boolean
+        default: false
+
+# Least privilege by default; jobs opt into what they need.
+permissions:
+  contents: read
+
+concurrency:
+  # A newer push supersedes an in-flight run for the same ref.
+  # Without this, two builds race to bump the same overlay file.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/argo-demo-app
+  REGISTRY: ghcr.io
+
+jobs:
+  # ---------------------------------------------------------------------
+  # Job 1: test. Runs on every trigger, including PRs.
+  # ---------------------------------------------------------------------
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install
+        working-directory: app
+        run: npm install
+
+      - name: Unit + integration tests
+        working-directory: app
+        run: npm test
+
+      - name: Validate kustomize overlays render
+        # Catch a broken manifest at CI time rather than at sync time.
+        # A render failure here means Argo CD would also fail to render.
+        run: |
+          kubectl kustomize deploy/overlays/dev > /dev/null
+          kubectl kustomize deploy/overlays/prod > /dev/null
+          echo "both overlays render"
+
+  # ---------------------------------------------------------------------
+  # Job 2: build and push the image. main only, never on PRs.
+  # ---------------------------------------------------------------------
+  build:
+    name: Build & Push
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      # The git SHA is the immutable identity of this build.
+      # Everything downstream (deploy, rollback) refers to it, never to `latest`.
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Derive tag
+        id: meta
+        run: echo "tag=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: app
+          push: true
+          # Two tags, one identity: the SHA is what we deploy,
+          # `latest` is a convenience pointer for humans.
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.meta.outputs.tag }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # arm64 so Apple Silicon laptops can run it, amd64 so the
+          # GitHub-hosted runners and most clusters can.
+          platforms: linux/amd64,linux/arm64
+
+  # ---------------------------------------------------------------------
+  # Job 3: update the Git manifest. THIS is the GitOps handoff.
+  # ---------------------------------------------------------------------
+  bump-dev:
+    name: Bump dev overlay
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Ensure kustomize is available
+        # The runner image usually ships kustomize, but the version drifts.
+        # Pinning it means `kustomize edit` behaves the same every run.
+        run: |
+          if ! command -v kustomize >/dev/null; then
+            curl -sSL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.5.0/kustomize_v5.5.0_linux_amd64.tar.gz" \
+              | sudo tar -xz -C /usr/local/bin kustomize
+          fi
+          kustomize version
+
+      - name: Pin dev overlay to the new image tag
+        # This one-line change is the entire "deploy" action.
+        # Argo CD watches the repo and reconciles the cluster to match.
+        run: |
+          cd deploy/overlays/dev
+          kustomize edit set image ghcr.io/${{ github.repository_owner }}/argo-demo-app:${{ needs.build.outputs.tag }}
+          cd -
+          git diff --stat
+
+      - name: Commit and push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add deploy/overlays/dev/kustomization.yaml
+          # [skip ci] prevents this bot commit from re-triggering the whole
+          # pipeline. Without it you get an infinite build loop.
+          git commit -m "chore(dev): deploy ${{ needs.build.outputs.tag }} [skip ci]"
+          git push
+
+  # ---------------------------------------------------------------------
+  # Job 4: optional prod promotion, manual trigger only.
+  # ---------------------------------------------------------------------
+  promote-prod:
+    name: Promote to prod
+    needs: [build, bump-dev]
+    if: github.event_name == 'workflow_dispatch' && inputs.promote
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Ensure kustomize is available
+        run: |
+          if ! command -v kustomize >/dev/null; then
+            curl -sSL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.5.0/kustomize_v5.5.0_linux_amd64.tar.gz" \
+              | sudo tar -xz -C /usr/local/bin kustomize
+          fi
+          kustomize version
+
+      - name: Pin prod overlay to the same image tag
+        run: |
+          cd deploy/overlays/prod
+          kustomize edit set image ghcr.io/${{ github.repository_owner }}/argo-demo-app:${{ needs.build.outputs.tag }}
+          cd -
+
+      - name: Commit and push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add deploy/overlays/prod/kustomization.yaml
+          git commit -m "chore(prod): deploy ${{ needs.build.outputs.tag }} [skip ci]"
+          git push

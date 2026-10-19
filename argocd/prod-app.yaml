@@ -1,0 +1,35 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argo-demo-prod
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/OliverYang/argo-demo.git
+    targetRevision: main
+    path: deploy/overlays/prod
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argo-demo-prod
+
+  syncPolicy:
+    automated:
+      prune: true
+      # prod still self-heals here because this is a learning setup.
+      # In a real prod you would often leave selfHeal off and gate sync
+      # behind a PR + approval, so a human confirms every change.
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

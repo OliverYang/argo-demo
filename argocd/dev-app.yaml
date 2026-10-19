@@ -1,0 +1,43 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argo-demo-dev
+  namespace: argocd
+  # finalizer: deleting the Application also deletes the resources it created.
+  # Without it you get orphaned pods you have to clean up by hand.
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/OliverYang/argo-demo.git
+    targetRevision: main
+    path: deploy/overlays/dev
+    kustomize:
+      # CI bumps the tag in the overlay; nothing else here needs to change.
+      images: []
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argo-demo-dev
+
+  syncPolicy:
+    # auto-sync is what makes this GitOps instead of "kubectl with extra steps".
+    automated:
+      # prune: delete resources removed from Git. This is the dangerous half —
+      # it is why Argo CD needs the repo to be the real source of truth.
+      prune: true
+      # selfHeal: revert manual `kubectl edit` drift on the cluster.
+      # Try it: kubectl scale, then watch Argo CD put it back.
+      selfHeal: true
+    syncOptions:
+      # Create the namespace if it does not exist yet.
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
