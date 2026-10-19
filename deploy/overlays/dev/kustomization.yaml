@@ -4,23 +4,23 @@ kind: Kustomization
 namespace: argo-demo-dev
 
 resources:
-  - ../../base
+- ../../base
 
 # This is the file CI rewrites. Nothing else in the repo changes on release,
 # which keeps the diff a release produces trivially reviewable.
 images:
-  - name: ghcr.io/oliveryang/argo-demo-app
-    newTag: latest
+- name: ghcr.io/oliveryang/argo-demo-app
+  newTag: 23f570e
 
 replicas:
-  - name: argo-demo
-    count: 1
+- count: 1
+  name: argo-demo
 
 patches:
-  - target:
-      kind: Deployment
-      name: argo-demo
-    patch: |-
-      - op: replace
-        path: /spec/template/spec/containers/0/env/0/value
-        value: dev
+- patch: |-
+    - op: replace
+      path: /spec/template/spec/containers/0/env/0/value
+      value: dev
+  target:
+    kind: Deployment
+    name: argo-demo
