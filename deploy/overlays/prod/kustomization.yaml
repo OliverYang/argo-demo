@@ -4,24 +4,24 @@ kind: Kustomization
 namespace: argo-demo-prod
 
 resources:
-  - ../../base
+- ../../base
 
 # In a real setup prod would be pinned to an immutable git SHA tag, never
 # `latest`. CI writes that tag here on release. Keeping the same mechanism
 # as dev is the point: only the VALUE differs between environments.
 images:
-  - name: ghcr.io/oliveryang/argo-demo-app
-    newTag: latest
+- name: ghcr.io/oliveryang/argo-demo-app
+  newTag: 713cbd6
 
 replicas:
-  - name: argo-demo
-    count: 3
+- count: 3
+  name: argo-demo
 
 patches:
-  - target:
-      kind: Deployment
-      name: argo-demo
-    patch: |-
-      - op: replace
-        path: /spec/template/spec/containers/0/env/0/value
-        value: prod
+- patch: |-
+    - op: replace
+      path: /spec/template/spec/containers/0/env/0/value
+      value: prod
+  target:
+    kind: Deployment
+    name: argo-demo
