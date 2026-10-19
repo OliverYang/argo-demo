@@ -27,7 +27,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  IMAGE: ghcr.io/${{ github.repository_owner }}/argo-demo-app
+  # GHCR rejects uppercase in repository paths, but GitHub usernames keep their
+  # original casing. Each job lowercases the owner via ${GITHUB_REPOSITORY_OWNER,,}
+  # rather than hardcoding a name here.
   REGISTRY: ghcr.io
 
 jobs:
@@ -78,6 +80,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Normalize image name
+        id: img
+        run: |
+          image="${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/argo-demo-app"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "IMAGE=$image" >> "$GITHUB_ENV"
+
       - name: Derive tag
         id: meta
         run: echo "tag=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
@@ -99,8 +108,8 @@ jobs:
           # Two tags, one identity: the SHA is what we deploy,
           # `latest` is a convenience pointer for humans.
           tags: |
-            ${{ env.IMAGE }}:${{ steps.meta.outputs.tag }}
-            ${{ env.IMAGE }}:latest
+            ${{ steps.img.outputs.image }}:${{ steps.meta.outputs.tag }}
+            ${{ steps.img.outputs.image }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           # arm64 so Apple Silicon laptops can run it, amd64 so the
@@ -137,7 +146,7 @@ jobs:
         # Argo CD watches the repo and reconciles the cluster to match.
         run: |
           cd deploy/overlays/dev
-          kustomize edit set image ghcr.io/${{ github.repository_owner }}/argo-demo-app:${{ needs.build.outputs.tag }}
+          kustomize edit set image ${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/argo-demo-app:${{ needs.build.outputs.tag }}
           cd -
           git diff --stat
 
@@ -177,7 +186,7 @@ jobs:
       - name: Pin prod overlay to the same image tag
         run: |
           cd deploy/overlays/prod
-          kustomize edit set image ghcr.io/${{ github.repository_owner }}/argo-demo-app:${{ needs.build.outputs.tag }}
+          kustomize edit set image ${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/argo-demo-app:${{ needs.build.outputs.tag }}
           cd -
 
       - name: Commit and push
