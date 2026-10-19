@@ -10,7 +10,7 @@ resources:
 # which keeps the diff a release produces trivially reviewable.
 images:
 - name: ghcr.io/oliveryang/argo-demo-app
-  newTag: 713cbd6
+  newTag: 72528fb
 
 replicas:
 - count: 1
