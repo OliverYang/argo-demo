@@ -62,7 +62,7 @@ test('/version echoes the injected version', async () => {
 test('/ returns app metadata', async () => {
   const { status, body } = await get('/');
   assert.strictEqual(status, 200);
-  assert.strictEqual(body.message, 'Hello from argoDemo');
+  assert.strictEqual(body.message, 'Hello from argoDemo v2');
   assert.ok(body.pod, 'pod identity should be present');
 });
 

@@ -9,7 +9,7 @@ const routes = {
   '/': () => ({
     statusCode: 200,
     body: {
-      message: 'Hello from argoDemo',
+      message: 'Hello from argoDemo v2',
       version: VERSION,
       env: ENV_NAME,
       pod: process.env.HOSTNAME || 'unknown',
