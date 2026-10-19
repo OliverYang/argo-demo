@@ -6,8 +6,10 @@ FROM node:22-alpine AS deps
 WORKDIR /app
 COPY package.json ./
 # No dependencies today, but keeping this layer means adding one later
-# does not require touching the Dockerfile.
-RUN npm install --omit=dev
+# does not require touching the Dockerfile. mkdir first: with an empty
+# dependency list npm creates no node_modules, and the COPY below would
+# fail with "\"/app/node_modules\": not found".
+RUN mkdir -p node_modules && npm install --omit=dev
 
 FROM node:22-alpine AS runtime
 WORKDIR /app
