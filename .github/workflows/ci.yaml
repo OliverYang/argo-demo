@@ -15,6 +15,13 @@ on:
         description: 'Also promote the built image to the prod overlay'
         type: boolean
         default: false
+      # Promotion reuses an ALREADY BUILT image. We do not rebuild for prod:
+      # rebuilding would produce a different artifact than the one we tested
+      # in dev, which defeats the purpose of testing.
+      promote_tag:
+        description: 'Image tag to promote to prod (e.g. e085f82). Empty = build this run.'
+        type: string
+        default: ''
 
 # Least privilege by default; jobs opt into what they need.
 permissions:
@@ -68,7 +75,7 @@ jobs:
   build:
     name: Build & Push
     needs: test
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -124,7 +131,9 @@ jobs:
   bump-dev:
     name: Bump dev overlay
     needs: build
-    if: github.event_name != 'pull_request'
+    # push only. A manual dispatch must NOT re-bump dev, otherwise the
+    # dispatch would silently undo a rollback that is pinned in dev.
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -163,11 +172,12 @@ jobs:
           git push
 
   # ---------------------------------------------------------------------
-  # Job 4: optional prod promotion, manual trigger only.
+  # Job 4: promote an existing image tag into prod. Manual only.
+  # Promotion is a Git write, not a build.
   # ---------------------------------------------------------------------
   promote-prod:
     name: Promote to prod
-    needs: [build, bump-dev]
+    needs: [test]
     if: github.event_name == 'workflow_dispatch' && inputs.promote
     runs-on: ubuntu-latest
     permissions:
@@ -185,16 +195,26 @@ jobs:
           fi
           kustomize version
 
-      - name: Pin prod overlay to the same image tag
+      - name: Resolve the tag to promote
+        id: pick
+        run: |
+          if [ -n "${{ inputs.promote_tag }}" ]; then
+            echo "tag=${{ inputs.promote_tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Pin prod overlay to the chosen tag
         run: |
           cd deploy/overlays/prod
-          kustomize edit set image ${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/argo-demo-app:${{ needs.build.outputs.tag }}
+          kustomize edit set image ${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/argo-demo-app:${{ steps.pick.outputs.tag }}
           cd -
+          git diff --stat
 
       - name: Commit and push
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add deploy/overlays/prod/kustomization.yaml
-          git commit -m "chore(prod): deploy ${{ needs.build.outputs.tag }} [skip ci]"
+          git commit -m "chore(prod): deploy ${{ steps.pick.outputs.tag }} [skip ci]"
           git push
