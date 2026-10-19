@@ -1,0 +1,30 @@
+# Multi-stage build.
+# Stage 1 exists only to install deps; stage 2 ships nothing but runtime.
+# The reason to split: build tooling and dev dependencies never reach the
+# final image, which is what keeps the attack surface and image size down.
+FROM node:22-alpine AS deps
+WORKDIR /app
+COPY package.json ./
+# No dependencies today, but keeping this layer means adding one later
+# does not require touching the Dockerfile.
+RUN npm install --omit=dev
+
+FROM node:22-alpine AS runtime
+WORKDIR /app
+
+# Run as a non-root user. K8s pods run as root by default, which is a
+# well-known privilege escalation vector.
+RUN addgroup -S app && adduser -S app -G app
+COPY --from=deps /app/node_modules ./node_modules
+COPY package.json server.js ./
+RUN chown -R app:app /app
+USER app
+
+ENV NODE_ENV=production \
+    PORT=8080
+
+EXPOSE 8080
+
+# The image stays environment-agnostic: version and env name are injected
+# at deploy time via the Deployment env, not baked in here.
+CMD ["node", "server.js"]

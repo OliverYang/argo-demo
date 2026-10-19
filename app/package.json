@@ -1,0 +1,12 @@
+{
+  "name": "argo-demo-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Minimal app for learning CI/CD + GitOps",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/"
+  },
+  "dependencies": {}
+}

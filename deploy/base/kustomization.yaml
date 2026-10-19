@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Base holds everything that is identical across environments.
+# Environments only express their DIFFERENCES in overlays/.
+resources:
+  - deployment.yaml
+  - service.yaml
+
+# `labels` + includeSelectors replaces the deprecated `commonLabels`.
+# includeSelectors is needed so the Service keeps matching the pods.
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: argo-demo
+    includeSelectors: true

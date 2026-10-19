@@ -1,0 +1,27 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: argo-demo-prod
+
+resources:
+  - ../../base
+
+# In a real setup prod would be pinned to an immutable git SHA tag, never
+# `latest`. CI writes that tag here on release. Keeping the same mechanism
+# as dev is the point: only the VALUE differs between environments.
+images:
+  - name: ghcr.io/oliveryang/argo-demo-app
+    newTag: latest
+
+replicas:
+  - name: argo-demo
+    count: 3
+
+patches:
+  - target:
+      kind: Deployment
+      name: argo-demo
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/env/0/value
+        value: prod

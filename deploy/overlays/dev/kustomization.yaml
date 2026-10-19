@@ -1,0 +1,26 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: argo-demo-dev
+
+resources:
+  - ../../base
+
+# This is the file CI rewrites. Nothing else in the repo changes on release,
+# which keeps the diff a release produces trivially reviewable.
+images:
+  - name: ghcr.io/oliveryang/argo-demo-app
+    newTag: latest
+
+replicas:
+  - name: argo-demo
+    count: 1
+
+patches:
+  - target:
+      kind: Deployment
+      name: argo-demo
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/env/0/value
+        value: dev
